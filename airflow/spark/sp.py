@@ -7,11 +7,6 @@ spark = SparkSession.builder \
     .appName("KafkaToS3") \
     .getOrCreate()
 
-# Esquema para los datos JSON
-schema = StructType() \
-    .add("ciudad", StringType()) \
-    .add("temperatura", StringType())
-
 # Leer los datos de Kafka
 df = spark.readStream \
     .format("kafka") \

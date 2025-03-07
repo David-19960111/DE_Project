@@ -2,10 +2,10 @@ from airflow.operators.python import PythonOperator
 from airflow import DAG 
 from datetime import timedelta
 from confluent_kafka import Producer
+from datetime import datetime
 
 import boto3
 import pprint 
-import datetime
 import requests
 import json
 
@@ -13,7 +13,7 @@ import json
 def fetch_weather_data():
     try:
         #Realiza la solicitud a la API de clima
-        api_url = 'https://api.openweathermap.org/data/2.5/weather?lat=4&lon=7&appid=4e25cb0d4efec8285c751febd053deb3'
+        api_url = 'https://api.openweathermap.org/data/2.5/weather?lat=40.416&lon=-3.703&appid=4e25cb0d4efec8285c751febd053deb3'
         response = requests.get(api_url)
         weather_data = response.json()
         return weather_data
@@ -60,7 +60,7 @@ def create_s3_bucket():
 dag = DAG(
     dag_id = "DAG_API_CLIMA",
     schedule_interval = timedelta(seconds=5),
-    start_date=datetime(2025, 3, 5), #año, mes, dia
+    start_date=datetime(2025, 3, 7), #año, mes, dia
     catchup = False 
 )
 
@@ -79,7 +79,7 @@ task_2 = PythonOperator(
 )
 
 task_3 = PythonOperator(
-    task_id='send task to kafka-spark',
+    task_id='send_task_to_kafka-spark',
     python_callable=json_serialization,
     dag=dag,
     provide_context=True,

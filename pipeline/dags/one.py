@@ -9,6 +9,9 @@ import pprint
 import requests
 import json
 
+S3_BUCKET_NAME = 'bucket-DE'
+KAFKA_BROKER = 'localhost:9092'
+KAFKA_TOPIC = 'airflow-spark'
 
 def fetch_weather_data():
     try:
@@ -33,61 +36,73 @@ def json_serialization(**kwargs):
     ti = kwargs['ti']
     json_data = ti.xcom_pull(task_ids = 'fetch_weather_task') #Obtener el JSON de la tarea anterior
     if json_data:
-        producer_config = {
-            'bootstrap.servers':'localhost:9092',
-            'client.id':'airflow'
-        }
-        producer = Producer(producer_config)
-        json_message = json.dumps(json_data)
-        producer.produce('airflow-spark', value=json_message)
-        producer.flush()
+        try:
+            producer_config = {
+                'bootstrap.servers': KAFKA_BROKER,
+                'client.id':'airflow'
+            }
+            producer = Producer(producer_config)
+            json_message = json.dumps(json_data)
+            producer.produce(KAFKA_TOPIC, value=json_message)
+            producer.flush()
+            print("Datos enviados a kafka con exito.")
+        except Exception as e:
+            print(f"Error enviando datos a Kafka: {e}")
     else:
         print('No se pudo obtener el JSON dedatos del clima')
 
-def create_s3_bucket():
-    s3 = boto3.client('s3')
-    bucket_name = 'mi-bucket-de-datos'
-    try:
-        s3.head_bucket(Bucket=bucket_name)
-        print(f'El bucket {bucket_name} ya existe.')
-    except Exception as e:
-        print(f'Error al verificar el bucket: {e}')
-        print(f'Creando el bucket {bucket_name}')
-        s3.create_bucket(Bucket=bucket_name)
-        print(f'Bucket{bucket_name} creado exitosamente.')
+def upload_to_s3(**kwargs):
+    """Sube los datos del clima a S3"""
+    ti = kwargs['ti']
+    json_data = ti.xcom_pull(task_ids='fetch_weather_task', key='weather_data')
+
+    if json_data:
+        s3 = boto3.client('s3')
+        s3_file_name = f'weather_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+
+        try:
+            # Verifica si el bucket existe
+            s3.head_bucket(Bucket=S3_BUCKET_NAME)
+        except Exception:
+            print(f'Creando bucket {S3_BUCKET_NAME}')
+            s3.create_bucket(Bucket=S3_BUCKET_NAME, CreateBucketConfiguration={'LocationConstraint': 'us-east-1'})
+
+        # Sube el archivo a S3
+        s3.put_object(Bucket=S3_BUCKET_NAME, Key=s3_file_name, Body=json.dumps(json_data))
+        print(f'Datos subidos a S3: s3://{S3_BUCKET_NAME}/{s3_file_name}')
+    else:
+        print('No se pudo obtener el JSON para subir a S3')
 
 
 dag = DAG(
     dag_id = "DAG_API_CLIMA",
-    schedule_interval = timedelta(seconds=5),
+    schedule_interval = timedelta(minutes=1),
     start_date=datetime(2025, 3, 7), #año, mes, dia
-    catchup = False 
+    catchup = False,
+    tags = ['weather', 'kafka', 's3']
 )
 
 task_1 = PythonOperator(
     task_id='fetch_weather_task',
     python_callable=fetch_weather_data,
     dag=dag,
-    provide_context=True,
 )
 
 task_2 = PythonOperator(
     task_id='print_logs',
     python_callable=print_json,
     dag=dag,
-    provide_context=True,
 )
 
 task_3 = PythonOperator(
     task_id='send_task_to_kafka-spark',
     python_callable=json_serialization,
     dag=dag,
-    provide_context=True,
 )
 
-create_bucket_task = PythonOperator(
-    task_id='create_s3_bucket',
-    python_callable=create_s3_bucket,
+task_4 = PythonOperator(
+    task_id='upload_to_s3',
+    python_callable=upload_to_s3,
     dag=dag,
     provide_context=True,
 )

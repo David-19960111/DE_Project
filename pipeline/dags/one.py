@@ -9,7 +9,7 @@ import pprint
 import requests
 import json
 
-S3_BUCKET_NAME = 'bucket-DE'
+S3_BUCKET_NAME = 'bucket-de'  
 KAFKA_BROKER = 'localhost:9092'
 KAFKA_TOPIC = 'airflow-spark'
 
@@ -54,20 +54,33 @@ def json_serialization(**kwargs):
 def upload_to_s3(**kwargs):
     """Sube los datos del clima a S3"""
     ti = kwargs['ti']
-    json_data = ti.xcom_pull(task_ids='fetch_weather_task', key='weather_data')
+    json_data = ti.xcom_pull(task_ids='fetch_weather_task')
 
     if json_data:
         s3 = boto3.client('s3')
         s3_file_name = f'weather_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
 
         try:
-            # Verifica si el bucket existe
+            # ✅ Verifica si el bucket existe
             s3.head_bucket(Bucket=S3_BUCKET_NAME)
-        except Exception:
-            print(f'Creando bucket {S3_BUCKET_NAME}')
-            s3.create_bucket(Bucket=S3_BUCKET_NAME, CreateBucketConfiguration={'LocationConstraint': 'us-east-1'})
+            print(f"El bucket {S3_BUCKET_NAME} ya existe.")
+        except s3.exceptions.ClientError as e:
+            # ✅ Si el bucket no existe, lo creamos correctamente
+            error_code = e.response["Error"]["Code"]
+            if error_code == "404":
+                print(f'Creando bucket {S3_BUCKET_NAME}')
+                
+                region = "us-east-1"  
+                
+                if region == "us-east-1":
+                    s3.create_bucket(Bucket=S3_BUCKET_NAME)
+                else:
+                    s3.create_bucket(
+                        Bucket=S3_BUCKET_NAME,
+                        CreateBucketConfiguration={'LocationConstraint': region}
+                    )
 
-        # Sube el archivo a S3
+        # ✅ Sube el archivo a S3
         s3.put_object(Bucket=S3_BUCKET_NAME, Key=s3_file_name, Body=json.dumps(json_data))
         print(f'Datos subidos a S3: s3://{S3_BUCKET_NAME}/{s3_file_name}')
     else:

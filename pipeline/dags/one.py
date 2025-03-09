@@ -107,4 +107,4 @@ task_4 = PythonOperator(
     provide_context=True,
 )
 
-task_1 >> task_2 >> task_3 >> create_bucket_task
+task_1 >> task_2 >> task_3 >> task_4
